@@ -35,7 +35,7 @@ class LiesTests(unittest.TestCase):
     def payload(self, **changes):
         return dict(word="Hello", source="en", target="de", sentence="Hello world.", article_title="News", article_url="https://example.com", **changes)
     def test_lookup_persists_context_and_reuses_translation(self):
-        with patch("server.translate", return_value="Hallo") as translate:
+        with patch("server.translate", return_value=[{"text":"Hallo","sense":"","provider":"MyMemory"}]) as translate:
             self.assertTrue(server.lookup(self.payload())["saved"])
             data=self.payload()
             data["sentence"]="Hello again."
@@ -64,3 +64,4 @@ class LiesTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
