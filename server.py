@@ -232,4 +232,4 @@ if __name__ == "__main__":
         pass
     port = int(os.environ.get("PORT", "8000"))
     print(f"Lies läuft auf http://127.0.0.1:{port}", flush=True)
-    ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
+    ThreadingHTTPServer(("0.0.0.0", port), Handler).serve_forever()
