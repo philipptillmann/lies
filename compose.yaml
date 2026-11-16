@@ -1,0 +1,13 @@
+services:
+  lies:
+    build: .
+    image: lies:local
+    restart: unless-stopped
+    ports:
+      - "${LIES_BIND:-0.0.0.0}:${LIES_PORT:-18086}:8000"
+    volumes:
+      - lies-data:/app/data
+    stop_grace_period: 15s
+
+volumes:
+  lies-data:
