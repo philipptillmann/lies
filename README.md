@@ -2,7 +2,81 @@
 
 Sprachen lernen mit Nachrichten: RSS abonnieren, Wörter antippen und Übersetzungen samt Satz automatisch sammeln.
 
-## Starten und aktualisieren
+## Docker (empfohlen)
+
+Voraussetzung: Docker Engine mit Docker Compose v2. Das Image enthält die gesamte App, Python und SQLite; auf dem Host ist kein Python nötig.
+
+```sh
+git pull --ff-only origin feat/lies-prototype
+docker compose up -d --build
+```
+
+Danach am Handy im VPN `http://<VPN-IP-des-Servers>:18086` öffnen. Standardmäßig wird Host-Port **18086** auf Container-Port **8000** veröffentlicht. Der bisherige Python-Server darf diesen Host-Port nicht gleichzeitig verwenden. Einen laufenden alten Server vorher mit `Strg+C` bzw. über dessen Dienstverwaltung beenden.
+
+Für einen anderen Port oder nur die VPN-Schnittstelle:
+
+```sh
+cp .env.example .env
+# In .env LIES_PORT und optional LIES_BIND auf die VPN-IP setzen.
+docker compose up -d --build
+```
+
+Die App läuft im Container als Benutzer ohne Root-Rechte. Der Healthcheck prüft die lokale HTTP-API. Mit `docker compose ps` siehst du den Status, mit `docker compose logs -f lies` die Logs. Der Container startet nach einem Neustart des Docker-Diensts automatisch wieder (`unless-stopped`). Die App hat weiterhin keinen Login; den veröffentlichten Port nur im eigenen Netz/VPN zugänglich machen.
+
+### Vorhandene Abos und Vokabeln übernehmen
+
+Docker verwendet ein eigenes persistentes Volume `lies-data` (mit Compose-Projektpräfix) für `/app/data`. Deine bisherige Datei `./data/lies.sqlite3` wird **nicht automatisch importiert**. Für den ersten Umstieg: alten Python-Server vollständig stoppen, bevor du die Datenbank übernimmst. Vor dem ersten `up`:
+
+```sh
+docker compose build
+docker compose run --rm --no-deps \
+  --volume "$PWD/data:/import:ro" lies python -c '
+from pathlib import Path
+import sqlite3
+source = Path("/import/lies.sqlite3")
+target = Path("/app/data/lies.sqlite3")
+if not source.is_file():
+    raise SystemExit("Keine alte Datenbank gefunden.")
+if target.exists():
+    raise SystemExit("Zieldatenbank existiert bereits; Import abgebrochen.")
+with sqlite3.connect("file:/import/lies.sqlite3?mode=ro", uri=True) as old:
+    with sqlite3.connect(target) as new:
+        old.backup(new)
+print("Abos und Vokabeln übernommen.")
+'
+docker compose up -d
+```
+
+Der Import überschreibt keine vorhandene Docker-Datenbank. Falls du Docker schon gestartet hast, bleibt die darin angelegte Datenbank erhalten; importiere dann nicht über diese Datei. Deine ursprüngliche lokale Datenbank bleibt unverändert.
+
+### Aktualisieren, stoppen und sichern
+
+```sh
+git pull --ff-only origin feat/lies-prototype
+docker compose up -d --build
+# Stoppen; Daten bleiben erhalten:
+docker compose down
+```
+
+Das Volume bleibt beim Neuaufbau oder Ersetzen des Containers erhalten. **`docker compose down --volumes` löscht die Docker-Daten dauerhaft.**
+
+Konsistentes SQLite-Backup bei laufendem Container erstellen:
+
+```sh
+docker compose exec -T lies python -c 'import sqlite3; source=sqlite3.connect("/app/data/lies.sqlite3"); target=sqlite3.connect("/app/data/backup.sqlite3"); source.backup(target); target.close(); source.close()'
+docker compose cp lies:/app/data/backup.sqlite3 ./lies-backup.sqlite3
+```
+
+Alternativ ohne Compose:
+
+```sh
+docker build -t lies:local .
+docker volume create lies-data
+docker run -d --name lies --restart unless-stopped \
+  -p 18086:8000 -v lies-data:/app/data lies:local
+```
+
+## Starten und aktualisieren (ohne Docker)
 
 Python 3.11+; für die App sind keine Pakete oder API-Schlüssel nötig.
 
@@ -63,3 +137,5 @@ python3 tests/browser_smoke.py
 ```
 
 Der Browsercheck startet einen temporären lokalen HTTP-Server und verwendet simulierte externe Dienste. Er prüft RSS-Lesen, Artikel-Nachladen und Ausfall-Fallback, Übersetzungsalternativen, Speicherung, getrennte Sprachlisten, niederländische Wörter und den Export der gewählten Liste.
+
+Docker-Build, HTTP-Erreichbarkeit, Healthcheck, Non-Root-Benutzer und Datenerhalt nach Container-Neuerstellung prüfen: `python3 tests/docker_smoke.py`. Der Test verwendet ein eigenes temporäres Compose-Projekt und löscht nur dessen Container/Volume.
